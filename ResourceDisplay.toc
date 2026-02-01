@@ -1,6 +1,6 @@
 ## Interface: 20505
 ## Title: ResourceDisplay
-## Notes: Minimal health and mana bars displayed below the player character.
+## Notes: Displays compact health and mana bars below your character. Bars show current values with text that turns red at low resource thresholds. The mana bar auto-hides for classes without mana.
 ## Author: Bryce-Ault
 ## Version: 1.0.0
 
