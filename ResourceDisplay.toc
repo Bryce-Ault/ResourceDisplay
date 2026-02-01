@@ -1,0 +1,7 @@
+## Interface: 20505
+## Title: ResourceDisplay
+## Notes: Minimal health and mana bars displayed below the player character.
+## Author: Bryce-Ault
+## Version: 1.0.0
+
+ResourceDisplay.lua
