@@ -2,14 +2,15 @@ local addonName, ns = ...
 
 -- Configuration
 local BAR_WIDTH = 160
-local BAR_HEIGHT = 8
+local BAR_HEIGHT = 11
 local BAR_SPACING = 2
-local BAR_OFFSET_Y = -60  -- below center of screen (player position)
+local BAR_OFFSET_Y = -145  -- below center of screen (player position)
 local BG_ALPHA = 0.4
 local BORDER_COLOR = { 0, 0, 0, 0.8 }
 
-local HEALTH_COLOR = { 0.1, 0.8, 0.1 }
-local MANA_COLOR = { 0.1, 0.3, 0.9 }
+local HEALTH_COLOR = { 0.3, 0.7, 0.3 }
+local MANA_COLOR = { 0.3, 0.45, 0.8 }
+local BAR_ALPHA = 0.7
 
 -- Utility: create a single resource bar
 local function CreateBar(parent, yOffset, r, g, b)
@@ -17,7 +18,7 @@ local function CreateBar(parent, yOffset, r, g, b)
     bar:SetSize(BAR_WIDTH, BAR_HEIGHT)
     bar:SetPoint("TOP", parent, "TOP", 0, yOffset)
     bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
-    bar:SetStatusBarColor(r, g, b)
+    bar:SetStatusBarColor(r, g, b, BAR_ALPHA)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(1)
 
@@ -39,7 +40,7 @@ local function CreateBar(parent, yOffset, r, g, b)
     -- Percentage text
     local text = bar:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     text:SetPoint("CENTER")
-    text:SetFont(text:GetFont(), 7, "OUTLINE")
+    text:SetFont(text:GetFont(), 11, "OUTLINE")
     text:SetTextColor(1, 1, 1, 0.9)
     bar.text = text
 
@@ -63,7 +64,12 @@ local function UpdateHealth()
     local cur = UnitHealth("player")
     healthBar:SetMinMaxValues(0, max)
     healthBar:SetValue(cur)
-    healthBar.text:SetText(math.floor(cur / max * 100 + 0.5) .. "%")
+    healthBar.text:SetText(cur)
+    if cur / max < 0.2 then
+        healthBar.text:SetTextColor(1, 0.2, 0.2, 0.9)
+    else
+        healthBar.text:SetTextColor(1, 1, 1, 0.9)
+    end
 end
 
 local function UpdateMana()
@@ -76,7 +82,12 @@ local function UpdateMana()
     local cur = UnitPower("player", 0)
     manaBar:SetMinMaxValues(0, max)
     manaBar:SetValue(cur)
-    manaBar.text:SetText(math.floor(cur / max * 100 + 0.5) .. "%")
+    manaBar.text:SetText(cur)
+    if cur / max < 0.2 then
+        manaBar.text:SetTextColor(1, 0.2, 0.2, 0.9)
+    else
+        manaBar.text:SetTextColor(1, 1, 1, 0.9)
+    end
 end
 
 -- Event handling
