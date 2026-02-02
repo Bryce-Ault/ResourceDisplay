@@ -12,6 +12,11 @@ local HEALTH_COLOR = { 0.3, 0.7, 0.3 }
 local MANA_COLOR = { 0.3, 0.45, 0.8 }
 local BAR_ALPHA = 0.7
 
+local TICK_INTERVAL = 2.0
+local DRINK_TICK_INTERVAL = 2.0
+local TICK_SPARK_COLOR = { 1, 1, 1, 0.7 }
+local DRINK_SPARK_COLOR = { 0.4, 0.8, 1, 0.8 }
+
 -- Utility: create a single resource bar
 local function CreateBar(parent, yOffset, r, g, b)
     local bar = CreateFrame("StatusBar", nil, parent)
@@ -57,6 +62,72 @@ anchor:SetFrameStrata("LOW")
 local healthBar = CreateBar(anchor, 0, unpack(HEALTH_COLOR))
 local manaBar = CreateBar(anchor, -(BAR_HEIGHT + BAR_SPACING), unpack(MANA_COLOR))
 
+-- Overlay frame for sparks (not clipped by StatusBar fill)
+local sparkOverlay = CreateFrame("Frame", nil, manaBar)
+sparkOverlay:SetAllPoints(manaBar)
+sparkOverlay:SetFrameLevel(manaBar:GetFrameLevel() + 2)
+
+-- Tick spark (MP5 regen)
+local tickSpark = sparkOverlay:CreateTexture(nil, "OVERLAY")
+tickSpark:SetSize(2, BAR_HEIGHT)
+tickSpark:SetColorTexture(unpack(TICK_SPARK_COLOR))
+tickSpark:Hide()
+
+-- Drink spark
+local drinkSpark = sparkOverlay:CreateTexture(nil, "OVERLAY")
+drinkSpark:SetSize(2, BAR_HEIGHT)
+drinkSpark:SetColorTexture(unpack(DRINK_SPARK_COLOR))
+drinkSpark:Hide()
+
+-- Tick tracking state
+local lastTickTime = nil
+local lastDrinkTickTime = nil
+local lastMana = 0
+local isDrinking = false
+
+local function IsDrinking()
+    for i = 1, 40 do
+        local name = UnitBuff("player", i)
+        if not name then break end
+        if name == "Drink" or name == "Food & Drink" then
+            return true
+        end
+    end
+    return false
+end
+
+local function UpdateSpark(spark, progress)
+    local xOffset = math.min(math.max(progress, 0), 1) * BAR_WIDTH
+    spark:ClearAllPoints()
+    spark:SetPoint("LEFT", sparkOverlay, "LEFT", xOffset - 1, 0)
+end
+
+manaBar:SetScript("OnUpdate", function(self, elapsed)
+    local now = GetTime()
+    local cur = UnitPower("player", 0)
+    local max = UnitPowerMax("player", 0)
+
+    -- Regen tick spark
+    if lastTickTime and max > 0 and cur < max and not isDrinking then
+        local progress = (now - lastTickTime) / TICK_INTERVAL
+        progress = progress % 1
+        UpdateSpark(tickSpark, progress)
+        tickSpark:Show()
+    else
+        tickSpark:Hide()
+    end
+
+    -- Drink tick spark
+    if lastDrinkTickTime and isDrinking then
+        local progress = (now - lastDrinkTickTime) / DRINK_TICK_INTERVAL
+        progress = progress % 1
+        UpdateSpark(drinkSpark, progress)
+        drinkSpark:Show()
+    else
+        drinkSpark:Hide()
+    end
+end)
+
 -- Update logic
 local function UpdateHealth()
     local max = UnitHealthMax("player")
@@ -99,10 +170,14 @@ events:RegisterEvent("UNIT_POWER_UPDATE")
 events:RegisterEvent("UNIT_MAXPOWER")
 events:RegisterEvent("UNIT_DISPLAYPOWER")
 
+events:RegisterEvent("UNIT_AURA")
+
 events:SetScript("OnEvent", function(self, event, unit, ...)
     if event == "PLAYER_ENTERING_WORLD" then
         UpdateHealth()
         UpdateMana()
+        lastMana = UnitPower("player", 0)
+        isDrinking = IsDrinking()
         return
     end
 
@@ -111,6 +186,21 @@ events:SetScript("OnEvent", function(self, event, unit, ...)
     if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         UpdateHealth()
     elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" then
+        local curMana = UnitPower("player", 0)
+        if curMana > lastMana then
+            local now = GetTime()
+            if isDrinking then
+                lastDrinkTickTime = now
+            else
+                lastTickTime = now
+            end
+        end
+        lastMana = curMana
         UpdateMana()
+    elseif event == "UNIT_AURA" then
+        isDrinking = IsDrinking()
+        if not isDrinking then
+            lastDrinkTickTime = nil
+        end
     end
 end)
