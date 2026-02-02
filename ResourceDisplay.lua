@@ -79,11 +79,12 @@ drinkSpark:SetSize(2, BAR_HEIGHT)
 drinkSpark:SetColorTexture(unpack(DRINK_SPARK_COLOR))
 drinkSpark:Hide()
 
--- Tick tracking state
-local lastTickTime = nil
-local lastDrinkTickTime = nil
+-- Tick tracking state: two independent clocks
+local lastRegenTick = nil  -- global server tick (spirit/MP5 regen)
+local lastDrinkTick = nil  -- per-buff timer (drinking)
 local lastMana = 0
 local isDrinking = false
+
 
 local function IsDrinking()
     for i = 1, 40 do
@@ -107,20 +108,20 @@ manaBar:SetScript("OnUpdate", function(self, elapsed)
     local cur = UnitPower("player", 0)
     local max = UnitPowerMax("player", 0)
 
-    -- Regen tick spark
-    if lastTickTime and max > 0 and cur < max and not isDrinking then
-        local progress = (now - lastTickTime) / TICK_INTERVAL
-        progress = progress % 1
+    -- Regen spark: visible when not drinking, mana not full, and clock is fresh
+    if lastRegenTick and not isDrinking and max > 0 and cur < max
+       and (now - lastRegenTick) < (TICK_INTERVAL * 2 + 0.5) then
+        local progress = ((now - lastRegenTick) / TICK_INTERVAL) % 1
         UpdateSpark(tickSpark, progress)
         tickSpark:Show()
     else
         tickSpark:Hide()
     end
 
-    -- Drink tick spark
-    if lastDrinkTickTime and isDrinking then
-        local progress = (now - lastDrinkTickTime) / DRINK_TICK_INTERVAL
-        progress = progress % 1
+    -- Drink spark: visible when drinking and clock is fresh
+    if lastDrinkTick and isDrinking
+       and (now - lastDrinkTick) < (DRINK_TICK_INTERVAL * 2 + 0.5) then
+        local progress = ((now - lastDrinkTick) / DRINK_TICK_INTERVAL) % 1
         UpdateSpark(drinkSpark, progress)
         drinkSpark:Show()
     else
@@ -187,20 +188,52 @@ events:SetScript("OnEvent", function(self, event, unit, ...)
         UpdateHealth()
     elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" then
         local curMana = UnitPower("player", 0)
+        local wasDrinkingPower = isDrinking
+        isDrinking = IsDrinking()
+        -- Handle drink transitions here (UNIT_POWER_UPDATE fires before UNIT_AURA)
+        if not wasDrinkingPower and isDrinking then
+            if not lastDrinkTick then
+                lastDrinkTick = GetTime()
+            end
+        elseif wasDrinkingPower and not isDrinking then
+            local now = GetTime()
+            if lastRegenTick then
+                -- Fast-forward regen clock to preserve phase through drinking
+                local elapsed = now - lastRegenTick
+                local ticksPassed = math.floor(elapsed / TICK_INTERVAL)
+                lastRegenTick = lastRegenTick + ticksPassed * TICK_INTERVAL
+            else
+                lastRegenTick = lastDrinkTick or now
+            end
+            lastDrinkTick = nil
+        end
         if curMana > lastMana then
             local now = GetTime()
+            local delta = curMana - lastMana
+
             if isDrinking then
-                lastDrinkTickTime = now
+                lastDrinkTick = now
             else
-                lastTickTime = now
+                lastRegenTick = now
             end
         end
         lastMana = curMana
         UpdateMana()
     elseif event == "UNIT_AURA" then
+        local wasDrinking = isDrinking
         isDrinking = IsDrinking()
-        if not isDrinking then
-            lastDrinkTickTime = nil
+        if not wasDrinking and isDrinking then
+            lastDrinkTick = GetTime()
+        elseif wasDrinking and not isDrinking then
+            local now = GetTime()
+            if lastRegenTick then
+                local elapsed = now - lastRegenTick
+                local ticksPassed = math.floor(elapsed / TICK_INTERVAL)
+                lastRegenTick = lastRegenTick + ticksPassed * TICK_INTERVAL
+            else
+                lastRegenTick = lastDrinkTick or now
+            end
+            lastDrinkTick = nil
         end
     end
 end)
