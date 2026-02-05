@@ -10,12 +10,15 @@ local BORDER_COLOR = { 0, 0, 0, 0.8 }
 
 local HEALTH_COLOR = { 0.3, 0.7, 0.3 }
 local MANA_COLOR = { 0.3, 0.45, 0.8 }
+local ENERGY_COLOR = { 0.9, 0.8, 0.3 }
 local BAR_ALPHA = 0.7
 
 local TICK_INTERVAL = 2.0
+local ENERGY_TICK_INTERVAL = 2.0
 local DRINK_TICK_INTERVAL = 2.0
 local TICK_SPARK_COLOR = { 1, 1, 1, 0.7 }
 local DRINK_SPARK_COLOR = { 0.4, 0.8, 1, 0.8 }
+local ENERGY_SPARK_COLOR = { 1, 0.9, 0.4, 0.8 }
 
 -- Utility: create a single resource bar
 local function CreateBar(parent, yOffset, r, g, b)
@@ -54,15 +57,16 @@ end
 
 -- Main anchor frame
 local anchor = CreateFrame("Frame", "ResourceDisplayAnchor", UIParent)
-anchor:SetSize(BAR_WIDTH, BAR_HEIGHT * 2 + BAR_SPACING)
+anchor:SetSize(BAR_WIDTH, BAR_HEIGHT * 3 + BAR_SPACING * 2)
 anchor:SetPoint("CENTER", UIParent, "CENTER", 0, BAR_OFFSET_Y)
 anchor:SetFrameStrata("LOW")
 
 -- Create bars
 local healthBar = CreateBar(anchor, 0, unpack(HEALTH_COLOR))
-local manaBar = CreateBar(anchor, -(BAR_HEIGHT + BAR_SPACING), unpack(MANA_COLOR))
+local energyBar = CreateBar(anchor, -(BAR_HEIGHT + BAR_SPACING), unpack(ENERGY_COLOR))
+local manaBar = CreateBar(anchor, -(BAR_HEIGHT + BAR_SPACING) * 2, unpack(MANA_COLOR))
 
--- Overlay frame for sparks (not clipped by StatusBar fill)
+-- Overlay frame for mana sparks (not clipped by StatusBar fill)
 local sparkOverlay = CreateFrame("Frame", nil, manaBar)
 sparkOverlay:SetAllPoints(manaBar)
 sparkOverlay:SetFrameLevel(manaBar:GetFrameLevel() + 2)
@@ -79,11 +83,26 @@ drinkSpark:SetSize(2, BAR_HEIGHT)
 drinkSpark:SetColorTexture(unpack(DRINK_SPARK_COLOR))
 drinkSpark:Hide()
 
+-- Overlay frame for energy spark
+local energySparkOverlay = CreateFrame("Frame", nil, energyBar)
+energySparkOverlay:SetAllPoints(energyBar)
+energySparkOverlay:SetFrameLevel(energyBar:GetFrameLevel() + 2)
+
+-- Energy tick spark
+local energySpark = energySparkOverlay:CreateTexture(nil, "OVERLAY")
+energySpark:SetSize(2, BAR_HEIGHT)
+energySpark:SetColorTexture(unpack(ENERGY_SPARK_COLOR))
+energySpark:Hide()
+
 -- Tick tracking state: two independent clocks
 local lastRegenTick = nil  -- global server tick (spirit/MP5 regen)
 local lastDrinkTick = nil  -- per-buff timer (drinking)
 local lastMana = 0
 local isDrinking = false
+
+-- Energy tick tracking
+local lastEnergyTick = nil
+local lastEnergy = 0
 
 
 local function IsDrinking()
@@ -97,10 +116,10 @@ local function IsDrinking()
     return false
 end
 
-local function UpdateSpark(spark, progress)
+local function UpdateSpark(spark, overlay, progress)
     local xOffset = math.min(math.max(progress, 0), 1) * BAR_WIDTH
     spark:ClearAllPoints()
-    spark:SetPoint("LEFT", sparkOverlay, "LEFT", xOffset - 1, 0)
+    spark:SetPoint("LEFT", overlay, "LEFT", xOffset - 1, 0)
 end
 
 manaBar:SetScript("OnUpdate", function(self, elapsed)
@@ -112,7 +131,7 @@ manaBar:SetScript("OnUpdate", function(self, elapsed)
     if lastRegenTick and not isDrinking and max > 0 and cur < max
        and (now - lastRegenTick) < (TICK_INTERVAL * 2 + 0.5) then
         local progress = ((now - lastRegenTick) / TICK_INTERVAL) % 1
-        UpdateSpark(tickSpark, progress)
+        UpdateSpark(tickSpark, sparkOverlay, progress)
         tickSpark:Show()
     else
         tickSpark:Hide()
@@ -122,10 +141,27 @@ manaBar:SetScript("OnUpdate", function(self, elapsed)
     if lastDrinkTick and isDrinking
        and (now - lastDrinkTick) < (DRINK_TICK_INTERVAL * 2 + 0.5) then
         local progress = ((now - lastDrinkTick) / DRINK_TICK_INTERVAL) % 1
-        UpdateSpark(drinkSpark, progress)
+        UpdateSpark(drinkSpark, sparkOverlay, progress)
         drinkSpark:Show()
     else
         drinkSpark:Hide()
+    end
+end)
+
+-- Energy bar OnUpdate for tick spark
+energyBar:SetScript("OnUpdate", function(self, elapsed)
+    local now = GetTime()
+    local cur = UnitPower("player", 3)  -- 3 = Energy
+    local max = UnitPowerMax("player", 3)
+
+    -- Energy spark: visible when energy not full and clock is fresh
+    if lastEnergyTick and max > 0 and cur < max
+       and (now - lastEnergyTick) < (ENERGY_TICK_INTERVAL * 2 + 0.5) then
+        local progress = ((now - lastEnergyTick) / ENERGY_TICK_INTERVAL) % 1
+        UpdateSpark(energySpark, energySparkOverlay, progress)
+        energySpark:Show()
+    else
+        energySpark:Hide()
     end
 end)
 
@@ -141,6 +177,28 @@ local function UpdateHealth()
         healthBar.text:SetTextColor(1, 0.2, 0.2, 0.9)
     else
         healthBar.text:SetTextColor(1, 1, 1, 0.9)
+    end
+end
+
+local function UpdateEnergy()
+    local max = UnitPowerMax("player", 3)  -- 3 = Energy
+    if max == 0 then
+        energyBar:Hide()
+        -- Move mana bar up to energy bar position
+        manaBar:SetPoint("TOP", anchor, "TOP", 0, -(BAR_HEIGHT + BAR_SPACING))
+        return
+    end
+    energyBar:Show()
+    -- Move mana bar below energy bar
+    manaBar:SetPoint("TOP", anchor, "TOP", 0, -(BAR_HEIGHT + BAR_SPACING) * 2)
+    local cur = UnitPower("player", 3)
+    energyBar:SetMinMaxValues(0, max)
+    energyBar:SetValue(cur)
+    energyBar.text:SetText(cur)
+    if cur / max < 0.2 then
+        energyBar.text:SetTextColor(1, 0.2, 0.2, 0.9)
+    else
+        energyBar.text:SetTextColor(1, 1, 1, 0.9)
     end
 end
 
@@ -173,11 +231,13 @@ events:RegisterEvent("UNIT_DISPLAYPOWER")
 
 events:RegisterEvent("UNIT_AURA")
 
-events:SetScript("OnEvent", function(self, event, unit, ...)
+events:SetScript("OnEvent", function(self, event, unit, powerType)
     if event == "PLAYER_ENTERING_WORLD" then
         UpdateHealth()
+        UpdateEnergy()
         UpdateMana()
         lastMana = UnitPower("player", 0)
+        lastEnergy = UnitPower("player", 3)
         isDrinking = IsDrinking()
         return
     end
@@ -187,6 +247,15 @@ events:SetScript("OnEvent", function(self, event, unit, ...)
     if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
         UpdateHealth()
     elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" then
+        -- Handle energy updates
+        local curEnergy = UnitPower("player", 3)
+        if curEnergy > lastEnergy then
+            lastEnergyTick = GetTime()
+        end
+        lastEnergy = curEnergy
+        UpdateEnergy()
+
+        -- Handle mana updates
         local curMana = UnitPower("player", 0)
         local wasDrinkingPower = isDrinking
         isDrinking = IsDrinking()
