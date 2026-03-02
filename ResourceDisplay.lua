@@ -11,6 +11,7 @@ local BORDER_COLOR = { 0, 0, 0, 0.8 }
 local HEALTH_COLOR = { 0.3, 0.7, 0.3 }
 local MANA_COLOR = { 0.3, 0.45, 0.8 }
 local ENERGY_COLOR = { 0.9, 0.8, 0.3 }
+local RAGE_COLOR = { 0.8, 0.2, 0.2 }
 local BAR_ALPHA = 0.7
 
 local TICK_INTERVAL = 2.0
@@ -64,6 +65,7 @@ anchor:SetFrameStrata("LOW")
 -- Create bars
 local healthBar = CreateBar(anchor, 0, unpack(HEALTH_COLOR))
 local energyBar = CreateBar(anchor, -(BAR_HEIGHT + BAR_SPACING), unpack(ENERGY_COLOR))
+local rageBar = CreateBar(anchor, -(BAR_HEIGHT + BAR_SPACING), unpack(RAGE_COLOR))
 local manaBar = CreateBar(anchor, -(BAR_HEIGHT + BAR_SPACING) * 2, unpack(MANA_COLOR))
 
 -- Overlay frame for mana sparks (not clipped by StatusBar fill)
@@ -180,17 +182,23 @@ local function UpdateHealth()
     end
 end
 
+local function RepositionMana()
+    if energyBar:IsShown() or rageBar:IsShown() then
+        manaBar:SetPoint("TOP", anchor, "TOP", 0, -(BAR_HEIGHT + BAR_SPACING) * 2)
+    else
+        manaBar:SetPoint("TOP", anchor, "TOP", 0, -(BAR_HEIGHT + BAR_SPACING))
+    end
+end
+
 local function UpdateEnergy()
     local max = UnitPowerMax("player", 3)  -- 3 = Energy
     if max == 0 or UnitPowerType("player") ~= 3 then
         energyBar:Hide()
-        -- Move mana bar up to energy bar position
-        manaBar:SetPoint("TOP", anchor, "TOP", 0, -(BAR_HEIGHT + BAR_SPACING))
+        RepositionMana()
         return
     end
     energyBar:Show()
-    -- Move mana bar below energy bar
-    manaBar:SetPoint("TOP", anchor, "TOP", 0, -(BAR_HEIGHT + BAR_SPACING) * 2)
+    RepositionMana()
     local cur = UnitPower("player", 3)
     energyBar:SetMinMaxValues(0, max)
     energyBar:SetValue(cur)
@@ -200,6 +208,21 @@ local function UpdateEnergy()
     else
         energyBar.text:SetTextColor(1, 1, 1, 0.9)
     end
+end
+
+local function UpdateRage()
+    local max = UnitPowerMax("player", 1)  -- 1 = Rage
+    if max == 0 or UnitPowerType("player") ~= 1 then
+        rageBar:Hide()
+        RepositionMana()
+        return
+    end
+    rageBar:Show()
+    RepositionMana()
+    local cur = UnitPower("player", 1)
+    rageBar:SetMinMaxValues(0, max)
+    rageBar:SetValue(cur)
+    rageBar.text:SetText(cur)
 end
 
 local function UpdateMana()
@@ -235,6 +258,7 @@ events:SetScript("OnEvent", function(self, event, unit, powerType)
     if event == "PLAYER_ENTERING_WORLD" then
         UpdateHealth()
         UpdateEnergy()
+        UpdateRage()
         UpdateMana()
         lastMana = UnitPower("player", 0)
         lastEnergy = UnitPower("player", 3)
@@ -254,6 +278,7 @@ events:SetScript("OnEvent", function(self, event, unit, powerType)
         end
         lastEnergy = curEnergy
         UpdateEnergy()
+        UpdateRage()
 
         -- Handle mana updates
         local curMana = UnitPower("player", 0)
