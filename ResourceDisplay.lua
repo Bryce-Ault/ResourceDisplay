@@ -182,7 +182,7 @@ end
 
 local function UpdateEnergy()
     local max = UnitPowerMax("player", 3)  -- 3 = Energy
-    if max == 0 then
+    if max == 0 or UnitPowerType("player") ~= 3 then
         energyBar:Hide()
         -- Move mana bar up to energy bar position
         manaBar:SetPoint("TOP", anchor, "TOP", 0, -(BAR_HEIGHT + BAR_SPACING))
