@@ -9,6 +9,7 @@ local BG_ALPHA = 0.4
 local BORDER_COLOR = { 0, 0, 0, 0.8 }
 
 local HEALTH_COLOR = { 0.3, 0.7, 0.3 }
+local HEAL_PREDICT_COLOR = { 0.3, 0.7, 0.3, 0.35 }
 local MANA_COLOR = { 0.3, 0.45, 0.8 }
 local ENERGY_COLOR = { 0.9, 0.8, 0.3 }
 local RAGE_COLOR = { 0.8, 0.2, 0.2 }
@@ -67,6 +68,13 @@ local healthBar = CreateBar(anchor, 0, unpack(HEALTH_COLOR))
 local energyBar = CreateBar(anchor, -(BAR_HEIGHT + BAR_SPACING), unpack(ENERGY_COLOR))
 local rageBar = CreateBar(anchor, -(BAR_HEIGHT + BAR_SPACING), unpack(RAGE_COLOR))
 local manaBar = CreateBar(anchor, -(BAR_HEIGHT + BAR_SPACING) * 2, unpack(MANA_COLOR))
+
+-- Heal prediction overlay on health bar
+local healPredict = healthBar:CreateTexture(nil, "ARTWORK")
+healPredict:SetTexture("Interface\\Buttons\\WHITE8x8")
+healPredict:SetVertexColor(unpack(HEAL_PREDICT_COLOR))
+healPredict:SetHeight(BAR_HEIGHT)
+healPredict:Hide()
 
 -- Overlay frame for mana sparks (not clipped by StatusBar fill)
 local sparkOverlay = CreateFrame("Frame", nil, manaBar)
@@ -180,6 +188,25 @@ local function UpdateHealth()
     else
         healthBar.text:SetTextColor(1, 1, 1, 0.9)
     end
+
+    -- Incoming heal prediction
+    local incoming = UnitGetIncomingHeals("player") or 0
+    if incoming > 0 and cur < max then
+        local healEnd = math.min(cur + incoming, max)
+        local startX = (cur / max) * BAR_WIDTH
+        local endX = (healEnd / max) * BAR_WIDTH
+        local width = endX - startX
+        if width > 0 then
+            healPredict:ClearAllPoints()
+            healPredict:SetPoint("LEFT", healthBar, "LEFT", startX, 0)
+            healPredict:SetWidth(width)
+            healPredict:Show()
+        else
+            healPredict:Hide()
+        end
+    else
+        healPredict:Hide()
+    end
 end
 
 local function RepositionMana()
@@ -253,6 +280,7 @@ events:RegisterEvent("UNIT_MAXPOWER")
 events:RegisterEvent("UNIT_DISPLAYPOWER")
 
 events:RegisterEvent("UNIT_AURA")
+events:RegisterEvent("UNIT_HEAL_PREDICTION")
 
 events:SetScript("OnEvent", function(self, event, unit, powerType)
     if event == "PLAYER_ENTERING_WORLD" then
@@ -268,7 +296,7 @@ events:SetScript("OnEvent", function(self, event, unit, powerType)
 
     if unit and unit ~= "player" then return end
 
-    if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" then
+    if event == "UNIT_HEALTH" or event == "UNIT_MAXHEALTH" or event == "UNIT_HEAL_PREDICTION" then
         UpdateHealth()
     elseif event == "UNIT_POWER_UPDATE" or event == "UNIT_MAXPOWER" or event == "UNIT_DISPLAYPOWER" then
         -- Handle energy updates
